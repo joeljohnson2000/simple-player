@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>M3U Player with Categories</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #111;
+      --panel: #1b1b1b;
+      --text: #eaeaea;
+      --muted: #9aa0a6;
+      --accent: #4f8cff;
+      --border: #2a2a2a;
+    }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: var(--bg);
+      color: var(--text);
+      display: grid;
+      grid-template-rows: auto 1fr;
+      height: 100vh;
+    }
+    header {
+      padding: 12px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    input[type="url"], input[type="text"] {
+      flex: 1 1 320px;
+      min-width: 220px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #0f0f0f;
+      color: var(--text);
+      outline: none;
+    }
+    button {
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #202124;
+      color: var(--text);
+      cursor: pointer;
+    }
+    button:hover { background: #2a2b2f; }
+    .container {
+      display: grid;
+      grid-template-columns: 280px 380px 1fr;
+      gap: 10px;
+      padding: 10px;
+      min-height: 0;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .panel header {
+      border: 0;
+      background: transparent;
+      padding: 10px;
+      font-weight: 600;
+    }
+    .scroll {
+      overflow: auto;
+      padding: 8px;
+      gap: 6px;
+      display: flex;
+      flex-direction: column;
+    }
+    .category, .channel {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      background: #161616;
+    }
+    .category:hover, .channel:hover {
+      border-color: var(--border);
+      background: #1c1c1c;
+    }
+    .category.active, .channel.active {
+      border-color: var(--accent);
+      background: #172033;
+    }
+    .muted { color: var(--muted); font-size: 0.9em; }
+    .row {
+      display: flex;
+      gap: 8px;
+      padding: 8px;
+      border-bottom: 1px solid var(--border);
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .badge {
+      background: #202b45;
+      color: #cfe0ff;
+      border: 1px solid #2c3f6b;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+    }
+    .channel {
+      grid-template-columns: 40px 1fr auto;
+      gap: 10px;
+    }
+    .logo {
+      width: 40px; height: 40px; border-radius: 6px; background: #0f0f0f; object-fit: cover;
+      border: 1px solid var(--border);
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      background: black;
+      border-bottom-left-radius: 10px;
+      border-bottom-right-radius: 10px;
+    }
+    .player-info {
+      padding: 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .title { font-weight: 600; }
+    .controls {
+      display: flex; gap: 8px; margin-left: auto;
+    }
+    .hint { padding: 8px 12px; color: var(--muted); font-size: 0.92em; }
+    @media (max-width: 1100px) {
+      .container { grid-template-columns: 1fr 1fr; grid-template-rows: 380px 1fr; }
+      .player { grid-column: 1 / -1; }
+    }
+    @media (max-width: 720px) {
+      .container { grid-template-columns: 1fr; grid-template-rows: 360px auto auto; }
+    }
+    a.inline {
+      color: var(--accent); text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <input id="m3uUrl" type="url" placeholder="Enter M3U/M3U8 playlist URL (e.g., [...](https://.../playlist.m3u8)" />
+    <button id="loadBtn">Load Playlist</button>
+    <span class="muted">Tip: If fetch fails due to CORS, use a proxy that adds Access-Control-Allow-Origin.</span>
+  </header>
+
+  <div class="container">
+    <!-- Categories -->
+    <section class="panel" id="categoriesPanel">
+      <header>Categories</header>
+      <div class="row">
+        <input id="catSearch" type="text" placeholder="Search categories..." />
+        <span class="badge" id="catCount">0</span>
+      </div>
+      <div class="scroll" id="categoriesList"></div>
+    </section>
+
+    <!-- Channels -->
+    <section class="panel" id="channelsPanel">
+      <header>Channels</header>
+      <div class="row">
+        <input id="chanSearch" type="text" placeholder="Search channels..." />
+        <span class="badge" id="chanCount">0</span>
+      </div>
+      <div class="scroll" id="channelsList"></div>
+    </section>
+
+    <!-- Player -->
+    <section class="panel player" id="playerPanel">
+      <div class="player-info">
+        <img id="playerLogo" class="logo" alt="" />
+        <div>
+          <div class="title" id="playerTitle">No channel selected</div>
+          <div class="muted" id="playerMeta"></div>
+        </div>
+        <div class="controls">
+          <button id="playBtn">Play/Pause</button>
+          <button id="muteBtn">Mute</button>
+        </div>
+      </div>
+      <video id="video" controls playsinline></video>
+      <div class="hint">
+        Common attributes parsed: tvg-name, tvg-logo, group-title (category), and channel name from EXTINF.
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const m3uUrlInput = document.getElementById('m3uUrl');
+    const loadBtn = document.getElementById('loadBtn');
+
+    const catSearch = document.getElementById('catSearch');
+    const chanSearch = document.getElementById('chanSearch');
+
+    const categoriesList = document.getElementById('categoriesList');
+    const channelsList = document.getElementById('channelsList');
+
+    const catCount = document.getElementById('catCount');
+    const chanCount = document.getElementById('chanCount');
+
+    const video = document.getElementById('video');
+    const playerTitle = document.getElementById('playerTitle');
+    const playerMeta = document.getElementById('playerMeta');
+    const playerLogo = document.getElementById('playerLogo');
+
+    const playBtn = document.getElementById('playBtn');
+    const muteBtn = document.getElementById('muteBtn');
+
+    let allChannels = [];
+    let categories = [];
+    let selectedCategory = 'All';
+
+    // Helpers
+    const norm = s => (s || '').toString().trim();
+    const safe = s => norm(s).toLowerCase();
+
+    function parseAttributes(attrStr) {
+      // Parses key="value" pairs, tolerant of missing quotes.
+      const attrs = {};
+      // Key="value" with escaped quotes
+      const rx = /(\w[\w-]*)=("([^"\\]|\\.)*"|[^,]*)/g;
+      let m;
+      while ((m = rx.exec(attrStr)) !== null) {
+        const key = m[1];
+        let val = m[2];
+        if (val.startsWith('"') && val.endsWith('"')) {
+          try {
+            val = JSON.parse(val.replace(/(^")|("$)/g, '').replace(/\\(")/g, '"'));
+          } catch {
+            val = val.slice(1, -1);
+          }
+        }
+        attrs[key] = String(val);
+      }
+      return attrs;
+    }
+
+    function parseM3U(text) {
+      // Basic EXTINF parser
+      const lines = text.split(/\r?\n/);
+      const result = [];
+      let current = null;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        if (line.startsWith('#EXTINF')) {
+          // #EXTINF:-1 tvg-id="..." tvg-name="..." tvg-logo="..." group-title="News",Channel Name
+          const commaIdx = line.indexOf(',');
+          const header = commaIdx >= 0 ? line.slice(0, commaIdx) : line;
+          const title = commaIdx >= 0 ? norm(line.slice(commaIdx + 1)) : '';
+
+          const attrStr = header.replace(/^#EXTINF:([^ ]*)\s*/, '');
+          const attrs = parseAttributes(attrStr);
+
+          current = {
+            name: title || attrs['tvg-name'] || '',
+            tvgName: attrs['tvg-name'] || '',
+            tvgId: attrs['tvg-id'] || '',
+            logo: attrs['tvg-logo'] || '',
+            group: attrs['group-title'] || attrs['tvg-group'] || 'Uncategorized',
+            url: ''
+          };
+        } else if (current && !line.startsWith('#')) {
+          // URL line
+          current.url = line;
+          result.push(current);
+          current = null;
+        } else if (line.startsWith('#EXTGRP:') && current) {
+          const grp = line.substring(8).trim();
+          if (grp) current.group = grp;
+        }
+      }
+      return result.filter(c => c.url);
+    }
+
+    function buildCategories(channels) {
+      const set = new Set(['All']);
+      for (const ch of channels) {
+        set.add(norm(ch.group) || 'Uncategorized');
+      }
+      return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    }
+
+    function renderCategories() {
+      const q = safe(catSearch.value);
+      categoriesList.innerHTML = '';
+      const filtered = categories.filter(c => safe(c).includes(q));
+      filtered.forEach(cat => {
+        const el = document.createElement('div');
+        el.className = 'category' + (cat === selectedCategory ? ' active' : '');
+        const count = cat === 'All' ? allChannels.length
+          : allChannels.filter(ch => norm(ch.group) === cat).length;
+        el.innerHTML = `
+          <div>${cat}</div>
+          <div class="badge">${count}</div>
+        `;
+        el.addEventListener('click', () => {
+          selectedCategory = cat;
+          renderCategories();
+          renderChannels();
+        });
+        categoriesList.appendChild(el);
+      });
+      catCount.textContent = filtered.length;
+    }
+
+    function renderChannels() {
+      const q = safe(chanSearch.value);
+      channelsList.innerHTML = '';
+      let list = allChannels;
+      if (selectedCategory && selectedCategory !== 'All') {
+        list = list.filter(ch => norm(ch.group) === selectedCategory);
+      }
+      if (q) {
+        list = list.filter(ch =>
+          safe(ch.name).includes(q) ||
+          safe(ch.tvgName).includes(q) ||
+          safe(ch.group).includes(q)
+        );
+      }
+      list.forEach(ch => {
+        const el = document.createElement('div');
+        el.className = 'channel';
+        const logo = norm(ch.logo);
+        el.innerHTML = `
+          <img class="logo" src="${logo}" alt="" onerror="this.style.visibility='hidden'"/>
+          <div>
+            <div>${norm(ch.name) || norm(ch.tvgName) || 'Untitled Channel'}</div>
+            <div class="muted">${norm(ch.group) || 'Uncategorized'}</div>
+          </div>
+          <button>Play</button>
+        `;
+        el.addEventListener('click', (e) => {
+          if (e.target.tagName === 'BUTTON' || e.currentTarget === e.target) {
+            playChannel(ch);
+          } else {
+            // clicking anywhere in row also plays
+            playChannel(ch);
+          }
+        });
+        channelsList.appendChild(el);
+      });
+      chanCount.textContent = list.length;
+    }
+
+    async function fetchText(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.text();
+    }
+
+    async function loadPlaylist(url) {
+      try {
+        categoriesList.innerHTML = '<div class="muted">Loading...</div>';
+        channelsList.innerHTML = '';
+        const text = await fetchText(url);
+        allChannels = parseM3U(text);
+        categories = buildCategories(allChannels);
+        selectedCategory = 'All';
+        renderCategories();
+        renderChannels();
+        if (allChannels.length) playChannel(allChannels[0]); // auto-select first
+      } catch (err) {
+        categoriesList.innerHTML = '';
+        channelsList.innerHTML = '';
+        console.error(err);
+        alert('Failed to load playlist. This may be due to CORS or an invalid URL.');
+      }
+    }
+
+    function playChannel(ch) {
+      // Update UI
+      playerTitle.textContent = norm(ch.name) || norm(ch.tvgName) || 'Untitled Channel';
+      playerMeta.textContent = (norm(ch.group) || 'Uncategorized') + (ch.tvgName ? ` • ${ch.tvgName}` : '');
+      playerLogo.src = norm(ch.logo) || '';
+      playerLogo.style.visibility = ch.logo ? 'visible' : 'hidden';
+
+      // Attempt to play
+      const src = ch.url;
+      const wasMuted = video.muted;
+      const wasPaused = video.paused;
+      video.src = src;
+      video.muted = wasMuted; // preserve mute state
+      video.play().catch(err => {
+        console.warn('Autoplay blocked or stream error:', err);
+        // If autoplay blocked, keep controls visible; user can click play
+      });
+
+      // Highlight in list (optional: not tracking individual DOM nodes for brevity)
+    }
+
+    // UI events
+    loadBtn.addEventListener('click', () => {
+      const url = m3uUrlInput.value.trim();
+      if (!url) return alert('Enter a playlist URL.');
+      loadPlaylist(url);
+    });
+
+    m3uUrlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') loadBtn.click();
+    });
+
+    catSearch.addEventListener('input', renderCategories);
+    chanSearch.addEventListener('input', renderChannels);
+
+    playBtn.addEventListener('click', () => {
+      if (video.paused) video.play(); else video.pause();
+    });
+    muteBtn.addEventListener('click', () => {
+      video.muted = !video.muted;
+      muteBtn.textContent = video.muted ? 'Unmute' : 'Mute';
+    });
+
+    // Optional: demo placeholder
+    playerLogo.style.visibility = 'hidden';
+  </script>
+</body>
+</html>
